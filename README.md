@@ -92,7 +92,7 @@ Your task is to analyze a crackme in IDA Pro. You can use the MCP tools to retri
 - Change the variable and argument types if necessary (especially pointer and array types)
 - Change function names to be more descriptive
 - If more details are necessary, disassemble the function and add comments with your findings
-- NEVER convert number bases yourself. Use the `int_convert` MCP tool if needed!
+- NEVER convert number bases or evaluate math yourself. Use `int_convert` for number-base conversions and `eval_expr` for arithmetic expressions!
 - Do not attempt brute forcing, derive any solutions purely from the disassembly and simple python scripts
 - Create a report.md with your findings and steps taken at the end
 - When you find a solution, prompt to user for feedback with the password you found
@@ -123,7 +123,7 @@ Use the following systematic methodology:
    - Use sub-agents to perform detailed analysis
 
 4. **Important Constraints**
-   - NEVER convert number bases yourself - use the int_convert MCP tool if needed
+   - NEVER convert number bases or evaluate math yourself — use `int_convert` for base conversions and `eval_expr` for arithmetic expressions
    - Use MCP tools to retrieve information as necessary
    - Derive all conclusions from actual analysis, not assumptions
 
@@ -140,7 +140,7 @@ Live stream discussing prompting and showing some real-world malware analysis:
 
 ## Tips for Enhancing LLM Accuracy
 
-Large Language Models (LLMs) are powerful tools, but they can sometimes struggle with complex mathematical calculations or exhibit "hallucinations" (making up facts). Make sure to tell the LLM to use the `int_convert` MCP tool and you might also need [math-mcp](https://github.com/EthanHenrickson/math-mcp) for certain operations.
+Large Language Models (LLMs) are powerful tools, but they can sometimes struggle with complex mathematical calculations or exhibit "hallucinations" (making up facts). Make sure to tell the LLM to use the `int_convert` or `eval_expr` MCP tools for number conversions and arithmetic — `eval_expr` handles full expressions including hex literals, bitwise operators, and mixed int/float math, so a separate math server is no longer needed for most operations.
 
 Another thing to keep in mind is that LLMs will not perform well on obfuscated code. Before trying to use an LLM to solve the problem, take a look around the binary and spend some time (automatically) removing the following things:
 
@@ -268,15 +268,21 @@ Worker controls:
 ## Core Functions
 
 - `lookup_funcs(queries)`: Get function(s) by address or name (auto-detects, accepts list or comma-separated string).
-- `int_convert(inputs)`: Convert numbers to different formats (decimal, hex, bytes, ASCII, binary).
 - `list_funcs(queries)`: List functions (paginated, filtered).
 - `list_globals(queries)`: List global variables (paginated, filtered).
+- `list_tools(filter?)`: List all registered MCP tools with their descriptions, parameters, and unsafe flags. Supports glob filter (e.g. `list_*`). Useful for agents discovering available capabilities at runtime.
 - `imports(offset, count)`: List all imported symbols with module names (paginated).
 - `decompile(addr)`: Decompile function at the given address.
 - `disasm(addr)`: Disassemble function with full details (arguments, stack frame, etc).
 - `xrefs_to(addrs)`: Get all cross-references to address(es).
 - `xrefs_to_field(queries)`: Get cross-references to specific struct field(s).
 - `callees(addrs)`: Get functions called by function(s) at address(es).
+
+## Number & Float Utilities
+
+- `int_convert(inputs)`: Convert integers to different formats (decimal, hex, bytes, ASCII, binary). Accepts a number string or `{text, size?}` dict; batch-friendly.
+- `eval_expr(exprs)`: Evaluate mathematical expressions and return decimal, hex, and float representations. Supports integer literals (including `0x` hex), floats, and all common operators (`+`, `-`, `*`, `/`, `//`, `%`, `**`, `&`, `|`, `^`, `~`, `<<`, `>>`). Safe sandbox — no function calls or imports. Accepts a single expression or a list.
+- `float_convert(inputs)`: Convert between hex and IEEE-754 floating-point values (single or double precision). Direction is auto-detected: a hex string (`0x3f800000`) decodes to float; a decimal string (`1.0`) encodes to hex. Each result includes the float value, hex representation, annotated binary bit string, sign, biased exponent, and mantissa bits. Accepts a single `{value, precision?}` dict or a list.
 
 ## Modification Operations
 
@@ -340,6 +346,26 @@ http://127.0.0.1:13337/mcp?ext=dbg
 - `dbg_stacktrace()`: Call stack with module/symbol info.
 - `dbg_read(regions)`: Read memory from debugged process.
 - `dbg_write(regions)`: Write memory to debugged process.
+
+## CAPA Integration (Extension)
+
+CAPA tools read capability findings already cached in the IDB by the [CAPA Explorer](https://github.com/mandiant/capa) plugin. They **never re-run analysis** — if no results are cached they instruct the agent to open the plugin first. Enable with `?ext=capa`:
+
+```
+http://127.0.0.1:13337/mcp?ext=capa
+```
+
+Combine extensions with commas: `?ext=capa,dbg`
+
+**Workflow:**
+1. Open the CAPA Explorer plugin in IDA once (`Edit > Plugins > CAPA Explorer`) to generate and cache results in the IDB.
+2. Connect your MCP client with `?ext=capa`.
+3. Use `capa_status` to confirm results are available, then `capa_capabilities` to retrieve findings.
+
+**Tools:**
+- `capa_status()`: Lightweight check — returns whether CAPA results are cached, how many capabilities were found, the CAPA version used, and the binary path. Always call this first.
+- `capa_capabilities(namespace?, attack_technique?, mbc_objective?)`: Return all cached capabilities with ATT&CK and MBC mappings and matched binary addresses. Optionally filter by namespace prefix (e.g. `anti-analysis`), ATT&CK technique ID (e.g. `T1055`), or MBC objective keyword (e.g. `Anti-Analysis`).
+- `capa_func_capabilities(addr)`: Return every CAPA capability matched at a specific function address. Pair with `lookup_funcs` to identify which functions are interesting, then call this to get the threat-intelligence context for each.
 
 ## Advanced Analysis Operations
 

@@ -739,7 +739,19 @@ def float_convert(
         "Convert between hex and IEEE-754 floating point. Pass a hex string (e.g. '0x3f800000') to decode, or a float string (e.g. '1.0') to encode. Use 'precision' to select 'single' (32-bit, default) or 'double' (64-bit).",
     ],
 ) -> list[FloatConvertResult]:
-    """Convert between hex representations and IEEE-754 single/double precision floats."""
+    """Convert between hex and IEEE-754 floating-point values (single or double precision).
+
+    Direction is auto-detected from the input value:
+      - Hex string (starts with 0x) → decode bytes to float
+          {"value": "0x3f800000"}                            → 1.0  (single)
+          {"value": "0x3ff0000000000000", "precision": "double"} → 1.0
+      - Numeric string (decimal / scientific) → encode float to hex
+          {"value": "1.0"}                                   → 0x3f800000
+          {"value": "3.14", "precision": "double"}           → 0x40091eb851eb851f
+
+    Each result includes: float_value, hexadecimal, binary (annotated sign_exp_mantissa),
+    sign bit, biased_exponent, mantissa_bits, and precision label.
+    Pass a list of dicts to convert multiple values in one call."""
     inputs = normalize_dict_list(inputs, lambda s: {"value": s})
 
     results = []
