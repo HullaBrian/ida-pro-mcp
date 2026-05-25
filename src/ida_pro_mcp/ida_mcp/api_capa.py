@@ -161,11 +161,15 @@ def _try_capa_python_api() -> Optional[dict]:
             continue
         if result is None:
             continue
-        # Pydantic v2 / v1 / plain dict
+        # Pydantic v2: mode='json' serialises datetime/UUID/etc. to plain types
         if hasattr(result, "model_dump"):
-            return result.model_dump()
+            try:
+                return result.model_dump(mode="json")
+            except TypeError:
+                return result.model_dump()
+        # Pydantic v1: .json() → str, then parse back to get JSON-safe types
         if hasattr(result, "dict"):
-            return result.dict()
+            return json.loads(result.json())
         if isinstance(result, dict):
             return result
 
@@ -312,15 +316,18 @@ def _extract_meta(raw: dict) -> CapaMetadata:
         rules_raw = [rules_raw]
     rules = [str(r) for r in rules_raw]
 
+    ts_raw = meta.get("timestamp", "")
+    timestamp = ts_raw.isoformat() if hasattr(ts_raw, "isoformat") else str(ts_raw) if ts_raw else ""
+
     return CapaMetadata(
-        timestamp=meta.get("timestamp", ""),
-        capa_version=meta.get("version", ""),
-        binary_path=binary_path,
-        binary_md5=binary_md5,
+        timestamp=timestamp,
+        capa_version=str(meta.get("version", "")),
+        binary_path=str(binary_path),
+        binary_md5=str(binary_md5),
         rules=rules,
-        arch=analysis.get("arch", ""),
-        os=analysis.get("os", ""),
-        format=analysis.get("format", ""),
+        arch=str(analysis.get("arch", "")),
+        os=str(analysis.get("os", "")),
+        format=str(analysis.get("format", "")),
     )
 
 
