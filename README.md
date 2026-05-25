@@ -347,6 +347,52 @@ http://127.0.0.1:13337/mcp?ext=dbg
 - `dbg_read(regions)`: Read memory from debugged process.
 - `dbg_write(regions)`: Write memory to debugged process.
 
+## Emulation (Extension)
+
+Unicorn Engine emulation tools allow agents to execute functions or code ranges in a sandbox without running the binary. All IDA segments are automatically mapped into Unicorn before emulation starts, so code and global data are available with no extra setup. Enable with `?ext=emu`:
+
+```
+http://127.0.0.1:13337/mcp?ext=emu
+```
+
+Combine extensions with commas: `?ext=emu,capa,dbg`
+
+**Requirements:** `unicorn` must be installed in IDA's Python environment:
+
+```sh
+pip install unicorn
+```
+
+**Tools:**
+- `emulate_func(addr, registers?, max_insns?, timeout_us?, memory_reads?)`: Emulate a complete function. Emulation stops when the function returns (RET/BX LR), the instruction limit is hit, an unmapped memory access occurs, or the timeout expires. Returns final register state, stop reason, instruction count, and optional memory region reads.
+- `emulate_range(start, end, registers?, max_insns?, timeout_us?, memory_reads?)`: Emulate a specific address range — emulation stops when the PC reaches `end`. Useful for loops, decryption stubs, or any self-contained code region.
+
+**Parameters:**
+- `registers`: Initial register values as `{"rdi": "0x1000", "rsi": "0x20"}` (x64 names; use `R0`/`SP`/`PC` for ARM, etc.). Stack pointer is set to a scratch region automatically unless overridden.
+- `max_insns`: Instruction budget (default 10 000; set to 0 for unlimited).
+- `timeout_us`: Wall-clock timeout in microseconds (default 5 000 000 = 5 s; set to 0 to disable).
+- `memory_reads`: Regions to read back after emulation — useful for inspecting output buffers: `[{"address": "0x402000", "size": 64}]`. Returned as hex strings.
+
+**Stop reasons:**
+- `completed` — `emulate_range` PC reached `end`, or function returned cleanly.
+- `max_instructions_reached` — instruction budget exhausted.
+- `unmapped_memory_<read|write|fetch>:0x<addr>` — access to memory not covered by any IDA segment (e.g. external DLLs, heap).
+- `unicorn_error:<message>` — other Unicorn exception (invalid instruction, etc.).
+
+**Example — emulate a decryption routine:**
+```
+emulate_func("sub_401000",
+             registers={"rcx": "0x402000", "rdx": "0x20"},
+             memory_reads=[{"address": "0x402000", "size": 32}])
+```
+
+**Example — emulate a loop and inspect output:**
+```
+emulate_range("0x401010", "0x401040",
+              registers={"rsi": "0x402000", "rcx": "0x10"},
+              memory_reads=[{"address": "0x402000", "size": 16}])
+```
+
 ## CAPA Integration (Extension)
 
 CAPA tools read capability findings already cached in the IDB by the [CAPA Explorer](https://github.com/mandiant/capa) plugin. They **never re-run analysis** — if no results are cached they instruct the agent to open the plugin first. Enable with `?ext=capa`:
@@ -355,7 +401,7 @@ CAPA tools read capability findings already cached in the IDB by the [CAPA Explo
 http://127.0.0.1:13337/mcp?ext=capa
 ```
 
-Combine extensions with commas: `?ext=capa,dbg`
+Combine extensions with commas: `?ext=capa,dbg,emu`
 
 **Workflow:**
 1. Open the CAPA Explorer plugin in IDA once (`Edit > Plugins > CAPA Explorer`) to generate and cache results in the IDB.
